@@ -17,6 +17,7 @@ fn LifetimeI(comptime lifetime_loc: [:0]const u8, comptime config: LifetimeConfi
         pub const ParentLifetime = config.parent_lifetime;
         var arena: std.heap.ArenaAllocator = .init(config.parent_allocator);
         const Error = std.mem.Allocator.Error;
+        const ___SRC_LOC___ = lifetime_loc;
         pub const Allocator = BoundedAllocatorI(lifetime_loc);
         pub fn allocator() Allocator {
             return .{ .allocator = arena.allocator() };
@@ -48,9 +49,6 @@ fn LifetimeI(comptime lifetime_loc: [:0]const u8, comptime config: LifetimeConfi
         }
     };
 }
-// pub fn BoundedAllocator(L: type) type {
-//     return BoundedAllocatorI(L.___SRC_LOC___);
-// }
 fn BoundedAllocatorI(comptime lifetime: [:0]const u8) type {
     return struct {
         const Error = std.mem.Allocator.Error;
@@ -99,6 +97,23 @@ fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
         inline fn fieldFn(self: @This(), comptime field_name: [:0]const u8) Bounded(FTyp(field_name), lifetime) {
             return .{ .p = &@field(self.p.*, field_name) };
         }
+        pub inline fn bound(self: @This(), L: type) L.Bound(V) {
+            comptime check_LTree: {
+                var Li = L;
+                while (true) {
+                    if (std.mem.eql(u8, Li.___SRC_LOC___, lifetime)) break :check_LTree;
+                    Li = Li.ParentLifetime orelse break;
+                }
+                @compileError(std.fmt.comptimePrint(
+                    \\ Lifetime({s}) is not containing Lifetime({s})
+                    \\    hint: you should specify the "parent_lifetime" property for
+                    \\          your Lifetimes so the checker can ensure the correct usage
+                ,
+                    .{ lifetime, L.___SRC_LOC___ },
+                ));
+            }
+            return .{ .p = self.p };
+        }
         const Ch =
             if (p.size == .one)
                 switch (@typeInfo(p.child)) {
@@ -123,6 +138,9 @@ fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
         inline fn indexFn(self: @This(), i: usize) Bounded(Ch, lifetime) {
             return .{ .p = &self.p[i] };
         }
+        inline fn lenFn(self: @This()) usize {
+            return self.p.len;
+        }
         inline fn sliceFn(self: @This(), from: usize, to: usize) Bounded(Chs, lifetime) {
             return .{ .p = self.p[from..to] };
         }
@@ -144,6 +162,8 @@ fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
             if (single_access) @compileError("Cannot take slice from a single-item ptr") else sliceFn;
         pub const sliceFrom =
             if (single_access) @compileError("Cannot take slice from a single-item ptr") else sliceFromFn;
+        pub const len =
+            if (single_access) @compileError("Len isn't defined for single-item ptr") else lenFn;
         pub const set =
             if (p.is_const)
                 @compileError("Cannot write to a const ptr")
@@ -307,8 +327,10 @@ test "bounded usage" {
     ap.set([4]u32{ 1, 2, 3, 4 });
     ap.index(0).set(5);
     try std.testing.expectEqual([4]u32{ 5, 2, 3, 4 }, ap.get());
+    try std.testing.expectEqual(4, ap.len());
 
     const sl: L.Bound([]u8) = try L.dupe(u8, "salam");
+    try std.testing.expectEqual(5, sl.len());
     sl.index(0).set('h');
     try std.testing.expectEqualSlices(u8, "halam", sl.p);
     const subsl: L.Bound([]u8) = sl.slice(1, 3);
@@ -324,4 +346,62 @@ test "type missmatch" {
     try std.testing.expect(La != Lb);
     try std.testing.expect(@TypeOf(La.allocator()) != @TypeOf(Lb.allocator()));
     try std.testing.expect(La.Bound(*i32) != Lb.Bound(*i32));
+}
+
+fn longest(A: type, x: A.Bound([]u8), y: A.Bound([]u8)) A.Bound([]u8) {
+    return if (x.len() > y.len()) x else y;
+}
+test "rust-book sample1" {
+    const La = Lifetime(@src(), .{});
+    defer La.deinit();
+
+    const string1 = try La.dupe(u8, "long string is long");
+
+    {
+        const Lb = Lifetime(@src(), .{ .parent_lifetime = La });
+        defer Lb.deinit();
+
+        const string2 = try Lb.dupe(u8, "xyz");
+        const result = longest(Lb, string1.bound(Lb), string2);
+        _ = result; // autofix
+        // std.debug.print("The longest string is {s}", .{result.p});
+    }
+}
+
+fn ImportantExcerpt(A: type) type {
+    return struct {
+        part: A.Bound([]const u8),
+        fn announce_and_return_part(self: *const @This(), announcement: []const u8) A.Bound([]const u8) {
+            std.debug.print("Attention please: {}", .{announcement});
+            return self.part;
+        }
+    };
+}
+
+test "rust-book sample2" {
+    const La = Lifetime(@src(), .{});
+    defer La.deinit();
+
+    const novel = try La.dupe(u8, "Call me Ishmael. Some years ago...");
+    var spl = std.mem.splitScalar(u8, novel.p, '.');
+    const first_sentence = spl.next().?;
+    const i = ImportantExcerpt(La){
+        .part = .{ .p = first_sentence },
+    };
+    _ = i; // autofix
+}
+
+fn first_word(A: type, s: A.Bound([]const u8)) A.Bound([]const u8) {
+    for (s.p, 0..) |item, i| {
+        if (item == ' ') {
+            return s.slice(0, i);
+        }
+    }
+    return s;
+}
+test "rust-book sample3" {
+    const La = Lifetime(@src(), .{});
+    defer La.deinit();
+
+    _ = first_word(La, (try La.dupe(u8, "salam")).intoConst());
 }
