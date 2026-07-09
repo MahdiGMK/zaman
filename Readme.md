@@ -43,17 +43,18 @@ std.debug.print("{}\n", use_after_free.get());
 compilation output
 
 ```
-src/uaf.zig:14:26: error: expected type 'lifetime.Bounded(lifetime.Lifetime(.{ .module = &.{ ... }[0..(...)], .file = &.{ ... }[0..(...)], .fn_name = &.{ ... }[0..(...)], .line = 4, .column = 25 },.{ .parent_allocator = .{ ... }, .parent_lifetime = null }),*u32)', found 'lifetime.Bounded(lifetime.Lifetime(.{ .module = &.{ ... }[0..(...)], .file = &.{ ... }[0..(...)], .fn_name = &.{ ... }[0..(...)], .line = 9, .column = 29 },.{ .parent_allocator = .{ ... }, .parent_lifetime = null }),*u32)'
+src/uaf.zig:14:26: error: expected type 'lifetime.Bounded(*u32,"uaf |zaman> uaf.zig:4:25"[0..24])',
+                                  found 'lifetime.Bounded(*u32,"uaf |zaman> uaf.zig:9:29"[0..24])'
         use_after_free = x;
                          ^
-src/lifetime.zig:73:12: note: struct declared here (2 times)
+src/lifetime.zig:84:12: note: struct declared here (2 times)
     return struct {
            ^~~~~~
 ```
 
 ## How it works
 
-Each `Lifetime(@src(), .{})` call produces a unique lifetime type. `Bounded(L, *T)` binds a pointer or slice to a specific lifetime `L` through Zig's type system. Cross-lifetime assignments produce compile errors because the types don't match — no runtime overhead, no footguns.
+Each `Lifetime(@src(), .{})` call produces a unique lifetime type. `Bounded(*T, L)` binds a pointer or slice to a specific lifetime `L` through Zig's type system. Cross-lifetime assignments produce compile errors because the types don't match — no runtime overhead, no footguns.
 
 ### Why?
 
@@ -179,7 +180,7 @@ _**Note**_: be careful with this escape hatch — lifetime guarantees are your r
 
 #### What is considered 'unsafe'?
 
-- manual creation of `Bounded(L, P)` objects
+- manual creation of `L.Bound(P)` objects
 - escaping `bounded.p` internal pointers
 - using lifetime's internal arena allocator
 

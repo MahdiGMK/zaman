@@ -3,13 +3,22 @@ pub const LifetimeConfig = struct {
     parent_allocator: std.mem.Allocator = std.heap.page_allocator,
     parent_lifetime: ?type = null,
 };
+fn fmtSrc(comptime src: std.builtin.SourceLocation) [:0]const u8 {
+    return std.fmt.comptimePrint(
+        "{s} |zaman> {s}:{}:{}",
+        .{ src.module, src.file, src.line, src.column },
+    );
+}
 pub fn Lifetime(comptime s: std.builtin.SourceLocation, comptime config: LifetimeConfig) type {
+    return LifetimeI(fmtSrc(s), config);
+}
+fn LifetimeI(comptime lifetime_loc: [:0]const u8, comptime config: LifetimeConfig) type {
     return struct {
-        const ___SRC_LOC___ = s;
         pub const ParentLifetime = config.parent_lifetime;
         var arena: std.heap.ArenaAllocator = .init(config.parent_allocator);
         const Error = std.mem.Allocator.Error;
-        pub fn allocator() BoundedAllocator(@This()) {
+        pub const Allocator = BoundedAllocatorI(lifetime_loc);
+        pub fn allocator() Allocator {
             return .{ .allocator = arena.allocator() };
         }
         pub fn deinit() void {
@@ -20,7 +29,7 @@ pub fn Lifetime(comptime s: std.builtin.SourceLocation, comptime config: Lifetim
         }
 
         pub fn Bound(T: type) type {
-            return Bounded(@This(), T);
+            return Bounded(T, lifetime_loc);
         }
         pub fn create(V: type) Error!Bound(*V) {
             return allocator().create(V);
@@ -39,13 +48,15 @@ pub fn Lifetime(comptime s: std.builtin.SourceLocation, comptime config: Lifetim
         }
     };
 }
-pub fn BoundedAllocator(L: type) type {
+// pub fn BoundedAllocator(L: type) type {
+//     return BoundedAllocatorI(L.___SRC_LOC___);
+// }
+fn BoundedAllocatorI(comptime lifetime: [:0]const u8) type {
     return struct {
-        pub const Lifetime = L;
         const Error = std.mem.Allocator.Error;
         allocator: std.mem.Allocator,
         pub fn Bound(T: type) type {
-            return Bounded(L, T);
+            return Bounded(T, lifetime);
         }
         pub inline fn create(self: @This(), V: type) Error!Bound(*V) {
             return .{ .p = try self.allocator.create(V) };
@@ -64,7 +75,7 @@ pub fn BoundedAllocator(L: type) type {
         }
     };
 }
-pub fn Bounded(L: type, V: type) type {
+fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
     const vtinfo = @typeInfo(V);
     if (vtinfo != .pointer) @compileError("T should be pointer or slice");
     const p = vtinfo.pointer;
@@ -72,21 +83,20 @@ pub fn Bounded(L: type, V: type) type {
         @compileError("C-Pointers are not supported");
     return struct {
         p: V,
-        pub const Lifetime = L;
         const ConstT =
             if (p.size == .one)
                 *const p.child
             else if (p.size == .slice)
                 if (p.sentinel()) |s| [:s]const p.child else []const p.child
             else if (p.sentinel()) |s| [*:s]const p.child else [*]p.child;
-        pub fn intoConst(self: @This()) Bounded(L, ConstT) {
+        pub fn intoConst(self: @This()) Bounded(ConstT, lifetime) {
             return .{ .p = self.p };
         }
         fn FTyp(comptime field_name: [:0]const u8) type {
             const Ft = @FieldType(p.child, field_name);
             return if (p.is_const) *const Ft else *Ft;
         }
-        inline fn fieldFn(self: @This(), comptime field_name: [:0]const u8) Bounded(L, FTyp(field_name)) {
+        inline fn fieldFn(self: @This(), comptime field_name: [:0]const u8) Bounded(FTyp(field_name), lifetime) {
             return .{ .p = &@field(self.p.*, field_name) };
         }
         const Ch =
@@ -110,13 +120,13 @@ pub fn Bounded(L: type, V: type) type {
                 else if (a.sentinel()) |s| [:s]a.child else []a.child,
                 else => @compileError("incompatible"),
             } else V;
-        inline fn indexFn(self: @This(), i: usize) Bounded(L, Ch) {
+        inline fn indexFn(self: @This(), i: usize) Bounded(Ch, lifetime) {
             return .{ .p = &self.p[i] };
         }
-        inline fn sliceFn(self: @This(), from: usize, to: usize) Bounded(L, Chs) {
+        inline fn sliceFn(self: @This(), from: usize, to: usize) Bounded(Chs, lifetime) {
             return .{ .p = self.p[from..to] };
         }
-        inline fn sliceFromFn(self: @This(), from: usize) Bounded(L, ChsE) {
+        inline fn sliceFromFn(self: @This(), from: usize) Bounded(ChsE, lifetime) {
             return .{ .p = self.p[from..] };
         }
         inline fn setFn(self: @This(), value: p.child) void {
@@ -145,7 +155,7 @@ pub fn Bounded(L: type, V: type) type {
 
 test "function signature" {
     const X = struct {
-        fn foo(L: type, x: Bounded(L, *i32)) !Bounded(L, *i32) {
+        fn foo(L: type, x: L.Bound(*i32)) !L.Bound(*i32) {
             const La = Lifetime(@src(), .{});
             defer La.deinit();
 
@@ -156,7 +166,7 @@ test "function signature" {
             y.set(2 * x.get());
             return y;
         }
-        fn bar(L: type, alloc: BoundedAllocator(L), x: Bounded(L, *i32)) !Bounded(L, *i32) {
+        fn bar(L: type, alloc: L.Allocator, x: L.Bound(*i32)) !L.Bound(*i32) {
             const La = Lifetime(@src(), .{});
             defer La.deinit();
 
@@ -207,7 +217,7 @@ test "lifetime in action" {
         x.* = @intCast(i);
     }
 
-    var some: Bounded(La, *i32) = undefined;
+    var some: La.Bound(*i32) = undefined;
 
     for (0..100) |_| {
         const Lb = Lifetime(@src(), .{});
@@ -218,7 +228,7 @@ test "lifetime in action" {
 
         for (0..10) |_| {
             const x = try Lb.create(i32);
-            try std.testing.expectEqual(Bounded(Lb, *i32), @TypeOf(x));
+            try std.testing.expectEqual(Lb.Bound(*i32), @TypeOf(x));
             // std.debug.print("{} ", .{x.p});
         }
         // std.debug.print("\n", .{});
@@ -229,7 +239,7 @@ test "lifetime in action" {
 
             for (0..10) |_| {
                 const x = try Lc.create(i32);
-                try std.testing.expectEqual(Bounded(Lc, *i32), @TypeOf(x));
+                try std.testing.expectEqual(Lc.Bound(*i32), @TypeOf(x));
                 // std.debug.print("{} ", .{x.p});
             }
             // std.debug.print("\n", .{});
@@ -242,16 +252,16 @@ test "bounded slices" {
     defer La.deinit();
 
     const st = try La.create(struct {
-        name: Bounded(La, []u8),
+        name: La.Bound([]u8),
         id: usize,
     });
     st.p.name = try La.dupe(u8, "salam");
     st.p.id = 10;
 
     const stname = st.field("name").p;
-    try std.testing.expectEqual(*Bounded(La, []u8), @TypeOf(stname));
+    try std.testing.expectEqual(*La.Bound([]u8), @TypeOf(stname));
     const stid = st.field("id");
-    try std.testing.expectEqual(Bounded(La, *usize), @TypeOf(stid));
+    try std.testing.expectEqual(La.Bound(*usize), @TypeOf(stid));
     // std.debug.print("{s} : {}\n", .{ stname.p, stid.p.* });
 
     const arr = try La.create([10:0]u8);
@@ -259,15 +269,15 @@ test "bounded slices" {
     arr.p[5] = 0;
 
     const arr0 = arr.index(0);
-    try std.testing.expectEqual(Bounded(La, *u8), @TypeOf(arr0));
+    try std.testing.expectEqual(La.Bound(*u8), @TypeOf(arr0));
     // std.debug.print("{c}", .{arr0.p.*});
 
     const arr05 = arr.slice(0, 5);
-    try std.testing.expectEqual(Bounded(La, []u8), @TypeOf(arr05));
+    try std.testing.expectEqual(La.Bound([]u8), @TypeOf(arr05));
     // std.debug.print("{s}", .{arr05.p});
 
     const arr2_ = arr.sliceFrom(2);
-    try std.testing.expectEqual(Bounded(La, [:0]u8), @TypeOf(arr2_));
+    try std.testing.expectEqual(La.Bound([:0]u8), @TypeOf(arr2_));
     // std.debug.print("{s}", .{arr2_.p});
 }
 
@@ -304,4 +314,14 @@ test "bounded usage" {
     const subsl: L.Bound([]u8) = sl.slice(1, 3);
     @memcpy(subsl.p, "xa");
     try std.testing.expectEqualSlices(u8, "hxaam", sl.p);
+}
+
+test "type missmatch" {
+    const La, const Lb = .{ Lifetime(@src(), .{}), Lifetime(@src(), .{}) };
+    defer La.deinit();
+    defer Lb.deinit();
+
+    try std.testing.expect(La != Lb);
+    try std.testing.expect(@TypeOf(La.allocator()) != @TypeOf(Lb.allocator()));
+    try std.testing.expect(La.Bound(*i32) != Lb.Bound(*i32));
 }
