@@ -1,31 +1,33 @@
 const std = @import("std");
+const Io = std.Io;
 
-pub fn Guarded(Mutex: type, Value: type) type {
+pub fn Guarded(Value: type) type {
     return struct {
-        mutex: Mutex,
+        mutex: std.Io.Mutex = .init,
         value: Value,
-        pub fn init(mutex: Mutex, value: Value) @This() {
-            return .{
-                .value = value,
-                .mutex = mutex,
-            };
+        pub fn init(value: Value) @This() {
+            return .{ .value = value };
         }
-        pub fn lock(self: *@This()) UniqueAccess(Mutex, Value) {
-            self.mutex.lock();
+        pub fn lock(self: *@This(), io: Io) !UniqueAccess(Value) {
+            try self.mutex.lock(io);
             return .{ .ref = self };
         }
-        pub fn tryLock(self: *@This()) ?UniqueAccess(Mutex, Value) {
+        pub fn lockUncancelable(self: *@This(), io: Io) UniqueAccess(Value) {
+            self.mutex.lockUncancelable(io);
+            return .{ .ref = self };
+        }
+        pub fn tryLock(self: *@This()) ?UniqueAccess(Value) {
             if (self.mutex.tryLock())
                 return .{ .ref = self };
             return null;
         }
     };
 }
-pub fn UniqueAccess(Mutex: type, Value: type) type {
+pub fn UniqueAccess(Value: type) type {
     return struct {
-        ref: ?*Guarded(Mutex, Value),
-        pub fn unlock(self: *@This()) void {
-            if (self.ref) |ref| ref.mutex.unlock();
+        ref: ?*Guarded(Value),
+        pub fn unlock(self: *@This(), io: Io) void {
+            if (self.ref) |ref| ref.mutex.unlock(io);
             self.ref = null;
         }
         pub fn getRef(self: *@This()) ?*const Value {
@@ -81,10 +83,10 @@ test "lock guard" {
             self.f2 -= 1;
         }
     };
-    var guarded = Guarded(std.Thread.Mutex, S).init(.{}, .{ .f1 = 0, .f2 = 0 });
+    var guarded = Guarded(S).init(.{ .f1 = 0, .f2 = 0 });
     {
-        var access = guarded.lock();
-        defer access.unlock();
+        var access = try guarded.lock(std.testing.io);
+        defer access.unlock(std.testing.io);
 
         access.modify(.{ .f2 = 2 }) catch unreachable;
         const f1 = access.call("meth0", .{}) catch unreachable;
