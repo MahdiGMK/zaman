@@ -22,6 +22,35 @@ y = z; // compilation error!
 // z has the Lifetime Lb != La
 ```
 
+## Example of use-after-free prevention
+
+```zig
+const La = Lifetime(@src(), .{});
+defer La.deinit();
+
+var use_after_free: La.Bound(*u32) = undefined;
+{
+    const Lb = Lifetime(@src(), .{});
+    defer Lb.deinit();
+
+    const x = Lb.create(u32);
+    x.set(10);
+    use_after_free = x;
+}
+std.debug.print("{}\n", use_after_free.get());
+```
+
+compilation output
+
+```
+src/uaf.zig:14:26: error: expected type 'lifetime.Bounded(lifetime.Lifetime(.{ .module = &.{ ... }[0..(...)], .file = &.{ ... }[0..(...)], .fn_name = &.{ ... }[0..(...)], .line = 4, .column = 25 },.{ .parent_allocator = .{ ... }, .parent_lifetime = null }),*u32)', found 'lifetime.Bounded(lifetime.Lifetime(.{ .module = &.{ ... }[0..(...)], .file = &.{ ... }[0..(...)], .fn_name = &.{ ... }[0..(...)], .line = 9, .column = 29 },.{ .parent_allocator = .{ ... }, .parent_lifetime = null }),*u32)'
+        use_after_free = x;
+                         ^
+src/lifetime.zig:73:12: note: struct declared here (2 times)
+    return struct {
+           ^~~~~~
+```
+
 ## How it works
 
 Each `Lifetime(@src(), .{})` call produces a unique lifetime type. `Bounded(L, *T)` binds a pointer or slice to a specific lifetime `L` through Zig's type system. Cross-lifetime assignments produce compile errors because the types don't match — no runtime overhead, no footguns.
