@@ -3,7 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const targ = b.standardTargetOptions(.{});
     const optim = b.standardOptimizeOption(.{});
-    _ = b.addModule("lifetime", .{
+    _ = b.addModule("zaman", .{
         .root_source_file = b.path("src/lifetime.zig"),
         .target = targ,
         .optimize = optim,

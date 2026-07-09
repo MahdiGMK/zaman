@@ -270,3 +270,38 @@ test "bounded slices" {
     try std.testing.expectEqual(Bounded(La, [:0]u8), @TypeOf(arr2_));
     // std.debug.print("{s}", .{arr2_.p});
 }
+
+test "bounded usage" {
+    const L = Lifetime(@src(), .{});
+    defer L.deinit();
+
+    const xp: L.Bound(*u32) = try L.create(u32);
+    xp.set(10);
+    const x: u32 = xp.get();
+    try std.testing.expectEqual(10, x);
+
+    const S = struct {
+        a: u32,
+        b: u32,
+    };
+    const sp: L.Bound(*S) = try L.create(S);
+    sp.set(S{ .a = 1, .b = 2 });
+    const afp: L.Bound(*u32) = sp.field("a");
+    const a: u32 = afp.get();
+    const b: u32 = sp.field("b").get();
+    try std.testing.expectEqual(1, a);
+    try std.testing.expectEqual(2, b);
+    try std.testing.expectEqual(S{ .a = 1, .b = 2 }, sp.get());
+
+    const ap = try L.create([4]u32);
+    ap.set([4]u32{ 1, 2, 3, 4 });
+    ap.index(0).set(5);
+    try std.testing.expectEqual([4]u32{ 5, 2, 3, 4 }, ap.get());
+
+    const sl: L.Bound([]u8) = try L.dupe(u8, "salam");
+    sl.index(0).set('h');
+    try std.testing.expectEqualSlices(u8, "halam", sl.p);
+    const subsl: L.Bound([]u8) = sl.slice(1, 3);
+    @memcpy(subsl.p, "xa");
+    try std.testing.expectEqualSlices(u8, "hxaam", sl.p);
+}
