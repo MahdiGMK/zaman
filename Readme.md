@@ -195,7 +195,7 @@ fn first_word<'a>(s: &'a str) -> &'a str {
 }
 ```
 
-Zaman
+Zaman version
 
 ```zig
 fn first_word(A: type, s: A.Bound([]const u8)) A.Bound([]const u8) {
@@ -205,6 +205,26 @@ fn first_word(A: type, s: A.Bound([]const u8)) A.Bound([]const u8) {
         }
     }
     return s;
+}
+```
+
+_**Note**_: this sample is used in the RustBook to explain Lifetime Elision but we can't support it!
+
+### fn indexer<'a>(array: &'a [i32], i: &usize) -> &'a i32
+
+Rust version
+
+```rust
+fn indexer<'a>(array: &'a [i32], i: &usize) -> &'a i32 {
+    array[i]
+}
+```
+
+Zaman version
+
+```zig
+fn indexer(A: type, array: A.Bound([]const i32), i: *const usize) A.Bound(*const i32) {
+    return array.index(i.*);
 }
 ```
 
@@ -237,8 +257,6 @@ fn ImportantExcerpt(A: type) type {
     };
 }
 ```
-
-_**Note**_: this sample is used in the RustBook to explain Lifetime Elision but we can't support it!
 
 ## How it works
 
@@ -408,6 +426,7 @@ _**Note**_: be careful with this escape hatch — lifetime guarantees are your r
 - manual creation of `L.Bound(P)` objects
 - escaping `bounded.p` internal pointers
 - using lifetime's internal arena allocator
+- exporting lifetimes out of their defined blocks
 
 #### What does it mean for an operation to be 'unsafe'?
 

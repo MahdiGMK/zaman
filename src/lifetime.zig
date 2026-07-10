@@ -405,3 +405,12 @@ test "rust-book sample3" {
 
     _ = first_word(La, (try La.dupe(u8, "salam")).intoConst());
 }
+
+fn indexer(A: type, array: A.Bound([]const i32), i: *const usize) A.Bound(*const i32) {
+    return array.index(i.*);
+}
+test "indexer" {
+    const La = Lifetime(@src(), .{});
+    const res = indexer(La, (try La.dupe(i32, &.{ 1, 2, 3 })).intoConst(), &0);
+    try std.testing.expectEqual(1, res.get());
+}
