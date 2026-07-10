@@ -29,6 +29,59 @@ fn LifetimeI(comptime lifetime_loc: [:0]const u8, comptime config: LifetimeConfi
             _ = arena.reset(.free_all);
         }
 
+        pub fn describe() void {
+            comptime var curr: ?type = @This();
+
+            std.debug.print("Lifetime Ancestry: ", .{});
+
+            inline while (curr) |c| {
+                std.debug.print("{s}", .{c.___SRC_LOC___});
+                curr = c.ParentLifetime;
+                if (curr != null) {
+                    std.debug.print(" -> ", .{});
+                }
+            }
+            std.debug.print("\n", .{});
+        }
+
+        pub fn verify() void {
+            comptime {
+                var slow: ?type = @This();
+                var fast: ?type = @This();
+
+                while (fast) |f| {
+                    fast = f.ParentLifetime;
+                    if (fast) |f_next| {
+                        fast = f_next.ParentLifetime;
+                        slow = slow.?.ParentLifetime;
+                    } else break;
+
+                    if (fast != null and fast == slow) {
+                        @compileError("zaman: Circular lifetime dependency detected!");
+                    }
+                }
+            }
+        }
+
+        pub fn comptime_verify() void {
+            comptime {
+                var slow: ?type = @This();
+                var fast: ?type = @This();
+
+                while (fast) |f| {
+                    fast = f.ParentLifetime;
+                    if (fast) |f_next| {
+                        fast = f_next.ParentLifetime;
+                        slow = slow.?.ParentLifetime;
+                    } else break;
+
+                    if (fast != null and fast == slow) {
+                        @compileError("zaman: Circular lifetime dependency detected at compile time!");
+                    }
+                }
+            }
+        }
+
         pub fn Bound(T: type) type {
             return Bounded(T, lifetime_loc);
         }
@@ -100,17 +153,23 @@ fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
         pub inline fn bound(self: @This(), L: type) L.Bound(V) {
             comptime check_LTree: {
                 var Li = L;
+                var trace: []const u8 = "";
+
                 while (true) {
+                    trace = trace ++ Li.___SRC_LOC___ ++ " -> ";
                     if (std.mem.eql(u8, Li.___SRC_LOC___, lifetime)) break :check_LTree;
-                    Li = Li.ParentLifetime orelse break;
+
+                    if (Li.ParentLifetime) |parent| {
+                        Li = parent;
+                    } else {
+                        @compileError(std.fmt.comptimePrint(
+                            \\ Lifetime '{s}' is NOT in the hierarchy of '{s}'.
+                            \\ Checked path: {s}
+                        ,
+                            .{ lifetime, L.___SRC_LOC___, trace },
+                        ));
+                    }
                 }
-                @compileError(std.fmt.comptimePrint(
-                    \\ Lifetime({s}) is not containing Lifetime({s})
-                    \\    hint: you should specify the "parent_lifetime" property for
-                    \\          your Lifetimes so the checker can ensure the correct usage
-                ,
-                    .{ lifetime, L.___SRC_LOC___ },
-                ));
             }
             return .{ .p = self.p };
         }
