@@ -258,17 +258,34 @@ fn ImportantExcerpt(A: type) type {
 }
 ```
 
-## How it works
+## Why does this exist?
 
-Each `Lifetime(@src(), .{})` call produces a unique lifetime type. `Bounded(*T, L)` binds a pointer or slice to a specific lifetime `L` through Zig's type system. Cross-lifetime assignments produce compile errors because the types don't match — no runtime overhead, no footguns.
+I have several die-hard Rustacean friends who were constantly bragging about their nice memory-safety features,
+so I decided to end the discussion by implementing their beloved lifetimes using Zig's `comptime`
 
-### Why?
+## Why should you care?
 
-Manual memory management is fine and manageable — but sometimes you need stronger guarantees, and eyeballing the code isn't enough. Zaman makes use-after-frees a _compile error_, not a segfault. No runtime checking, no tracing, no borrowing rules to learn. Just normal Zig types.
+- Manual memory management in Zig is manageable - but sometimes you need stronger guarantees
+- There are safe usage patterns that are not implementable in Rust
+- Usually the attack surface is limited compared to the entire codebase, so you don't need to bear the burden of Rust's rules for its entirety
+- For long-running applications, Zaman might reduce memory fragmentation and improve allocation throughput at the cost of slightly higher memory consumption, compared to many allocation strategies including Rust's (you can optimize this balance as you wish)
+- This is a benchmark of what Zig's `comptime` is capable of and you might apply these ideas to your own use-cases
+
+## Current known limitations
+
+- Lifetimes are not yet safe for multi-threaded usage
+- Some Rust features like 'lifetime elision' are not possible
+- No implicit detection and transformation of lifetimes
+
+## How does it work?
+
+Each `Lifetime(@src(), .{})` call, produces a unique lifetime type that can create bounded pointers.
+The main property of bounded pointers or `L.Bound(P)` types is that `La.Bound(P) != Lb.Bound(P)`, thus
+`La.Bound(P)` pointers cannot convert into `Lb.Bound(P)` implicitly, throwing a readable _compile error_ if it happens.
 
 ## Other use-cases
 
-You can also use zaman lifetimes when you need an arena that doesn't release its memory when the function ends - reducing the allocation count to O(1) amortized.
+You can also use Zaman lifetimes when you need an arena that doesn't release its memory when the function ends - reducing the allocation count to O(1) amortized.
 
 ```zig
 fn foo() void {
@@ -419,8 +436,6 @@ You can get the internal allocator of a lifetime via
 `L.allocator().allocator`
 and use it with other containers and libraries.
 
-_**Note**_: be careful with this escape hatch — lifetime guarantees are your responsibility once you bypass `Bounded`.
-
 #### What is considered 'unsafe'?
 
 - manual creation of `L.Bound(P)` objects
@@ -440,7 +455,7 @@ Using lifetime types directly in generic function signatures can cause binary bl
 
 `BoundedAllocator` has the exact same in-memory representation as a plain `std.mem.Allocator`, so the compiler has an easier time deduplicating instantiations.
 
-_**Note**_: This behaviour is not guaranteed — it depends on the compiler's optimiser.
+_**Note**_: This behaviour is not guaranteed and depends on the compiler's optimiser.
 
 ```zig
 fn foo1(L: type, allocator: BoundedAllocator(L)) !L.Bound(*u32) {
@@ -463,4 +478,4 @@ test "bounded allocators" {
 
 ## What could be next?
 
-I have ideas around concurrency safety using similar ideas — but nothing implemented yet!
+I have ideas around concurrency safety using similar ideas - but nothing implemented yet!
