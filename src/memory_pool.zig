@@ -121,11 +121,25 @@ pub fn Extra(comptime Item: type, comptime pool_options: Options) type {
             ptr.* = undefined;
             return ptr;
         }
+        pub fn createReuse(pool: *Pool) ?ItemPtr {
+            return if (pool.free_list.popFirst()) |node|
+                @ptrCast(@alignCast(node))
+            else
+                null;
+        }
+        pub fn createNew(pool: *Pool, allocator: Allocator) Allocator.Error!ItemPtr {
+            const ptr: ItemPtr = if (pool_options.growable)
+                @ptrCast(try pool.allocNew(allocator))
+            else
+                return error.OutOfMemory;
+
+            ptr.* = undefined;
+            return ptr;
+        }
 
         /// Destroys a previously created item.
         /// Only pass items to `ptr` that were previously created with `create()` of the same memory pool!
         pub fn destroy(pool: *Pool, ptr: ItemPtr) void {
-            ptr.* = undefined;
             pool.free_list.prepend(@ptrCast(ptr));
         }
 
