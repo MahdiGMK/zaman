@@ -273,7 +273,7 @@ so I decided to end the discussion by implementing their beloved lifetimes using
 
 ## Current known limitations
 
-- Lifetimes are not yet safe for multi-threaded usage
+- Lifetimes bounded pointers are not yet safe for multi-threaded usage
 - Some Rust features like 'lifetime elision' are not possible
 - No implicit detection and transformation of lifetimes
 
@@ -475,6 +475,10 @@ test "bounded allocators" {
     // ...
 }
 ```
+
+## TODO
+
+- Benchmarking the performance and memory usage of Zaman and other strategies (Rust's RAII included)
 
 ## What could be next?
 

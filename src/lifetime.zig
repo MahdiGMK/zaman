@@ -1,6 +1,6 @@
 const std = @import("std");
 pub const LifetimeConfig = struct {
-    parent_allocator: std.mem.Allocator = std.heap.page_allocator,
+    child_allocator: std.mem.Allocator = std.heap.page_allocator,
     parent_lifetime: ?type = null,
 };
 fn fmtSrc(comptime src: std.builtin.SourceLocation) [:0]const u8 {
@@ -15,7 +15,7 @@ pub fn Lifetime(comptime s: std.builtin.SourceLocation, comptime config: Lifetim
 fn LifetimeI(comptime lifetime_loc: [:0]const u8, comptime config: LifetimeConfig) type {
     return struct {
         pub const ParentLifetime = config.parent_lifetime;
-        var arena: std.heap.ArenaAllocator = .init(config.parent_allocator);
+        threadlocal var arena: std.heap.ArenaAllocator = .init(config.child_allocator);
         const Error = std.mem.Allocator.Error;
         const ___SRC_LOC___ = lifetime_loc;
         pub const Allocator = BoundedAllocatorI(lifetime_loc);
@@ -413,4 +413,51 @@ test "indexer" {
     const La = Lifetime(@src(), .{});
     const res = indexer(La, (try La.dupe(i32, &.{ 1, 2, 3 })).intoConst(), &0);
     try std.testing.expectEqual(1, res.get());
+}
+
+fn threadedLt(io: std.Io) !void {
+    var iorng = std.Random.IoSource{ .io = io };
+    const rng = iorng.interface();
+    const Lt = Lifetime(@src(), .{});
+    defer Lt.deinit();
+
+    const test_vector = rng.array(u64, 1 << 14);
+
+    var barr: [32]struct { usize, usize } = undefined;
+    var parr: [32][]u64 = undefined;
+    const cnt = rng.intRangeAtMostBiased(usize, 5, 20);
+    for (0..cnt) |i| {
+        const xx = rng.uintAtMostBiased(usize, @min(1 << 14, @as(usize, 1) << @intCast(6 + @divFloor(i, 2))));
+        const yy = rng.uintAtMostBiased(usize, @min(1 << 14, @as(usize, 1) << @intCast(6 + @divFloor(i, 2))));
+        const l, const r = .{ @min(xx, yy), @max(xx, yy) };
+        const p = try Lt.alloc(u64, r - l);
+        barr[i] = .{ l, r };
+        parr[i] = p.p;
+        @memcpy(p.p, test_vector[l..r]);
+        try io.sleep(.fromNanoseconds(rng.intRangeAtMostBiased(i96, 10, 2000)), .real);
+        try std.testing.expectEqualSlices(u64, test_vector[l..r], p.p);
+        try std.testing.expectEqual(.{ l, r }, barr[i]);
+        try std.testing.expectEqual(p.p, parr[i]);
+    }
+    for (barr[0..cnt], parr[0..cnt]) |b, p| {
+        try std.testing.expectEqualSlices(u64, test_vector[b[0]..b[1]], p);
+    }
+}
+fn threadedEntry(io: std.Io) std.Io.Cancelable!void {
+    threadedLt(io) catch |e| {
+        switch (e) {
+            error.Canceled => return error.Canceled,
+            else => {
+                std.debug.dumpCurrentStackTrace(.{});
+                @panic("failed");
+            },
+        }
+    };
+}
+test "mutli-threaded" {
+    var g = std.Io.Group.init;
+    for (0..1000) |_| {
+        try g.concurrent(std.testing.io, threadedEntry, .{std.testing.io});
+    }
+    try g.await(std.testing.io);
 }
