@@ -455,9 +455,14 @@ fn threadedEntry(io: std.Io) std.Io.Cancelable!void {
     };
 }
 test "mutli-threaded" {
-    var g = std.Io.Group.init;
-    for (0..1000) |_| {
-        try g.concurrent(std.testing.io, threadedEntry, .{std.testing.io});
+    if (comptime @import("builtin").zig_version
+        .order(.{ .major = 0, .minor = 16, .patch = 0 })
+        .compare(.gte))
+    {
+        var g = std.Io.Group.init;
+        for (0..1000) |_| {
+            try g.concurrent(std.testing.io, threadedEntry, .{std.testing.io});
+        }
+        try g.await(std.testing.io);
     }
-    try g.await(std.testing.io);
 }

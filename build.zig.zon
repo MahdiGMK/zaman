@@ -1,7 +1,7 @@
 .{
-    .name = .zlife,
+    .name = .zaman,
     .version = "0.0.1",
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.14.0",
     .paths = .{ "src", "LICENSE", "Readme.md" },
-    .fingerprint = 0x4dc9ee916404a79b,
+    .fingerprint = 0x6039d1df5ea1cf5e,
 }

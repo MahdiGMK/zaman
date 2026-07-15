@@ -8,11 +8,11 @@ pub fn build(b: *std.Build) void {
         .target = targ,
         .optimize = optim,
     });
-    _ = b.addModule("lockguard", .{
-        .root_source_file = b.path("src/lockguard.zig"),
-        .target = targ,
-        .optimize = optim,
-    });
+    // _ = b.addModule("lockguard", .{
+    //     .root_source_file = b.path("src/lockguard.zig"),
+    //     .target = targ,
+    //     .optimize = optim,
+    // });
     const lifetime_tests = b.addRunArtifact(b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/test.zig"),

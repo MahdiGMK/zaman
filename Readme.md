@@ -299,6 +299,12 @@ fn foo() void {
 }
 ```
 
+## Supported Zig versions
+
+This package doesn't use any version specific std/language feature so it could be used in any zig version with zero or minimal modification
+
+- `master` directly supports from zig-0.15.0 to zig-0.16.0
+
 ## Installation
 
 1. Add zaman as a dependency in your build.zig.zon:
