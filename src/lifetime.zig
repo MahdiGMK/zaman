@@ -1,4 +1,7 @@
 const std = @import("std");
+const compat = @import("compat.zig");
+const zigVersionCompare = compat.zigVersionCompare;
+
 pub const LifetimeConfig = struct {
     child_allocator: std.mem.Allocator = std.heap.page_allocator,
     parent_lifetime: ?type = null,
@@ -92,7 +95,7 @@ fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
         }
         fn FTyp(comptime field_name: [:0]const u8) type {
             const Ft = @FieldType(p.child, field_name);
-            return if (p.is_const) *const Ft else *Ft;
+            return if (p_is_const) *const Ft else *Ft;
         }
         inline fn fieldFn(self: @This(), comptime field_name: [:0]const u8) Bounded(FTyp(field_name), lifetime) {
             return .{ .p = &@field(self.p.*, field_name) };
@@ -114,23 +117,29 @@ fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
             }
             return .{ .p = self.p };
         }
+        const SemVer = std.SemanticVersion;
+        const p_is_const =
+            if (zigVersionCompare(.gte, "0.17.0-dev"))
+                p.attrs.@"const"
+            else
+                p.is_const; // older api
         const Ch =
             if (p.size == .one)
                 switch (@typeInfo(p.child)) {
-                    .array => |a| if (p.is_const) *const a.child else *a.child,
+                    .array => |a| if (p_is_const) *const a.child else *a.child,
                     else => @compileError("incompatible"),
                 }
-            else if (p.is_const) *const p.child else *p.child;
+            else if (p_is_const) *const p.child else *p.child;
         const Chs =
             if (p.size == .one)
                 switch (@typeInfo(p.child)) {
-                    .array => |a| if (p.is_const) []const a.child else []a.child,
+                    .array => |a| if (p_is_const) []const a.child else []a.child,
                     else => @compileError("incompatible"),
                 }
-            else if (p.is_const) []const p.child else []p.child;
+            else if (p_is_const) []const p.child else []p.child;
         const ChsE =
             if (p.size == .one) switch (@typeInfo(p.child)) {
-                .array => |a| if (p.is_const)
+                .array => |a| if (p_is_const)
                     if (a.sentinel()) |s| [:s]const a.child else []const a.child
                 else if (a.sentinel()) |s| [:s]a.child else []a.child,
                 else => @compileError("incompatible"),
@@ -165,7 +174,7 @@ fn Bounded(V: type, comptime lifetime: [:0]const u8) type {
         pub const len =
             if (single_access) @compileError("Len isn't defined for single-item ptr") else lenFn;
         pub const set =
-            if (p.is_const)
+            if (p_is_const)
                 @compileError("Cannot write to a const ptr")
             else if (p.size != .one) @compileError("Cannot write to a many-item ptr") else setFn;
         pub const get =
@@ -455,10 +464,7 @@ fn threadedEntry(io: std.Io) std.Io.Cancelable!void {
     };
 }
 test "mutli-threaded" {
-    if (comptime @import("builtin").zig_version
-        .order(.{ .major = 0, .minor = 16, .patch = 0 })
-        .compare(.gte))
-    {
+    if (comptime zigVersionCompare(.gte, "0.16.0-dev")) {
         var g = std.Io.Group.init;
         for (0..1000) |_| {
             try g.concurrent(std.testing.io, threadedEntry, .{std.testing.io});
