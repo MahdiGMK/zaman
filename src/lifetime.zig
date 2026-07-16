@@ -22,32 +22,32 @@ fn LifetimeI(comptime lifetime_loc: [:0]const u8, comptime config: LifetimeConfi
         const Error = std.mem.Allocator.Error;
         const ___SRC_LOC___ = lifetime_loc;
         pub const Allocator = BoundedAllocatorI(lifetime_loc);
-        pub fn allocator() Allocator {
+        pub inline fn allocator() Allocator {
             return .{ .allocator = arena.allocator() };
         }
-        pub fn deinit() void {
+        pub inline fn deinit() void {
             _ = arena.reset(.retain_capacity);
         }
-        pub fn deinitRelease() void {
+        pub inline fn deinitRelease() void {
             _ = arena.reset(.free_all);
         }
 
         pub fn Bound(T: type) type {
             return Bounded(T, lifetime_loc);
         }
-        pub fn create(V: type) Error!Bound(*V) {
+        pub inline fn create(V: type) Error!Bound(*V) {
             return allocator().create(V);
         }
-        pub fn alloc(V: type, n: usize) Error!Bound([]V) {
+        pub inline fn alloc(V: type, n: usize) Error!Bound([]V) {
             return allocator().alloc(V, n);
         }
-        pub fn allocSentinel(V: type, n: usize, comptime sentinel: V) Error!Bound([:sentinel]V) {
+        pub inline fn allocSentinel(V: type, n: usize, comptime sentinel: V) Error!Bound([:sentinel]V) {
             return allocator().allocSentinel(V, n, sentinel);
         }
-        pub fn dupe(V: type, m: []const V) Error!Bound([]V) {
+        pub inline fn dupe(V: type, m: []const V) Error!Bound([]V) {
             return allocator().dupe(V, m);
         }
-        pub fn dupeZ(V: type, m: []const V) Error!Bound([:0]V) {
+        pub inline fn dupeZ(V: type, m: []const V) Error!Bound([:0]V) {
             return allocator().dupeZ(V, m);
         }
     };
