@@ -2,6 +2,6 @@
     .name = .zaman,
     .version = "0.0.1",
     .minimum_zig_version = "0.14.0",
-    .paths = .{ "src", "LICENSE", "Readme.md" },
+    .paths = .{ "src", "LICENSE", "Readme.md", "build.zig", "build.zig.zon" },
     .fingerprint = 0x6039d1df5ea1cf5e,
 }
